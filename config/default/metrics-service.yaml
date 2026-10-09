@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: infra-smoketest-metrics
+  labels:
+    app.kubernetes.io/name: infra-smoketest
+spec:
+  selector:
+    app.kubernetes.io/name: infra-smoketest
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics

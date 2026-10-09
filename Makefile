@@ -21,6 +21,7 @@ vet:
 
 manifests:
 	kustomize build config/default >/dev/null
+	kustomize build config/monitoring >/dev/null
 	kustomize build config/aws-pod-identity-webhook >/dev/null
 	kustomize build examples >/dev/null
 

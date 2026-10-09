@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
@@ -54,6 +55,7 @@ func run() error {
 	role := flags.String("expected-role-arn", "", "Full IAM role ARN instead of deriving it from the shared AWS account")
 	region := flags.String("region", "us-east-1", "AWS region expected from the webhook")
 	leader := flags.Bool("leader-elect", true, "Enable controller leader election")
+	metricsAddress := flags.String("metrics-bind-address", ":8080", "Metrics listen address; use 0 to disable")
 	logOptions := zap.Options{}
 	logOptions.BindFlags(flags)
 	if err := flags.Parse(os.Args[2:]); err != nil {
@@ -83,13 +85,22 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme, Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{definition.Namespace: {}}}, LeaderElection: *leader, LeaderElectionID: "infra-smoketest-controller", LeaderElectionNamespace: definition.Namespace, HealthProbeBindAddress: ":8081", Metrics: metricsserver.Options{BindAddress: "0"}})
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme, Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{definition.Namespace: {}}}, LeaderElection: *leader, LeaderElectionID: "infra-smoketest-controller", LeaderElectionNamespace: definition.Namespace, HealthProbeBindAddress: ":8081", Metrics: metricsserver.Options{BindAddress: *metricsAddress}})
 	if err != nil {
 		return err
 	}
 	r := &controller.Reconciler{Client: direct, ProbeImage: resolved, AWSAccountID: accountID, ExpectedRoleARN: roleARN, Region: *region}
 	if err = r.SetupWithManager(mgr); err != nil {
 		return err
+	}
+	if *metricsAddress != "0" {
+		// Warm the definition informer alongside the controller's Run informer.
+		if _, err = mgr.GetCache().GetInformer(ctx, &api.SmokeTest{}); err != nil {
+			return err
+		}
+		if err = metrics.Registry.Register(controller.NewRunMetrics(mgr.GetCache())); err != nil {
+			return err
+		}
 	}
 	if err = mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
