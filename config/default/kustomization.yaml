@@ -9,5 +9,6 @@ resources:
   - namespace.yaml
   - rbac.yaml
   - deployment.yaml
+  - metrics-service.yaml
   - ../aws-pod-identity-webhook
   - ../../examples

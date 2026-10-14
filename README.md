@@ -292,6 +292,73 @@ nix develop path:. --command go run ./cmd/infra-smoketest controller \
   --probe-image=ghcr.io/YOUR-OWNER/YOUR-REPOSITORY@sha256:YOUR-DIGEST
 ```
 
+## Controller metrics
+
+The controller serves Prometheus metrics over HTTP at `/metrics` on port 8080.
+The default manifests include the `infra-smoketest-metrics` ClusterIP Service.
+Use `--metrics-bind-address=ADDRESS` to change the listener or
+`--metrics-bind-address=0` to disable it; update the Service and container port
+if changing the port.
+
+```sh
+kubectl port-forward -n infra-smoketest service/infra-smoketest-metrics 8080:8080
+# In another terminal:
+curl -fsS http://localhost:8080/metrics
+```
+
+For Prometheus Operator installations, an optional ServiceMonitor is provided:
+
+```sh
+kubectl apply -k config/monitoring
+```
+
+The Operator's ServiceMonitor CRD must already be installed. Configure your
+Prometheus instance's `serviceMonitorSelector` and `serviceMonitorNamespaceSelector`
+to include this monitor in `infra-smoketest`; add any required monitor labels
+through your deployment overlay. Installing the Service alone does not configure
+Prometheus scraping.
+
+All custom metrics are gauges with a `smoketest` label from the Run's
+`spec.testRef.name`. The `namespace` label is supplied by ServiceMonitor scraping
+and is omitted from the exporter to avoid a label conflict.
+
+| Metric | Additional labels | Meaning |
+| --- | --- | --- |
+| `infra_smoketest_runs` | `phase` | Number of retained Run objects in each current phase. |
+| `infra_smoketest_cleanup_pending_runs` | None | Runs whose cleanup has started but `CleanupComplete` is not true, including failed Runs still holding the execution slot. |
+| `infra_smoketest_oldest_pending_run_timestamp_seconds` | None | Creation timestamp of the oldest pending Run; absent when no Runs are pending. |
+| `infra_smoketest_last_run_completed_timestamp_seconds` | `phase` | Latest completion timestamp per terminal phase, after cleanup has completed. |
+| `infra_smoketest_last_run_duration_seconds` | `phase` | Duration from `startedAt` to `completedAt` for that latest completed Run, including cleanup and excluding queue time; absent if the Run never started. |
+
+Run counts emit zero for each phase of every installed SmokeTest, including
+definitions that have never run. Phases are `Pending`, `Running`, `CleaningUp`,
+`Succeeded`, `Failed`, and `Cancelled`, plus `Unknown` for unrecognized status
+values. Runs with no phase yet count as `Pending`. Completion and duration
+metrics use only `Succeeded`, `Failed`, and `Cancelled`; they are absent until
+a matching completed Run exists. A failed Run still cleaning up contributes to
+the phase count and pending-cleanup count, but not the completion metrics.
+
+Metrics are rebuilt from the Kubernetes watch cache on each scrape, so they
+reflect retained objects across controller restarts and remove deleted Runs.
+Completed Runs are normally retained for seven days. These are counts of current
+objects, not cumulative counters: do not use `rate()` or `increase()` on them.
+Run names, UIDs, and error messages are not metric labels. These choices follow
+[Prometheus guidance on gauges, labels, and timestamps](https://prometheus.io/docs/practices/instrumentation/).
+A cache read failure fails the scrape instead of reporting zero counts.
+
+For example, inspect retained failures and time since the latest successful Run:
+
+```promql
+infra_smoketest_runs{phase="Failed"}
+time() - infra_smoketest_last_run_completed_timestamp_seconds{phase="Succeeded"}
+```
+
+Every controller replica reports the same Run inventory, including followers.
+If running multiple replicas, use `max` across replica labels instead of summing
+their counts, keeping your cluster, namespace, SmokeTest, and phase labels.
+The endpoint also exposes controller-runtime's reconciliation/error counters,
+reconciliation duration, work-queue metrics, and Go/process metrics.
+
 ## Runtime behavior and limits
 
 The controller logs Run acceptance, stage progress and deadlines, resource

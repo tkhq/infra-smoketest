@@ -35,6 +35,7 @@ func TestSharedAWSManifestReferences(t *testing.T) {
 	var config *corev1.ConfigMap
 	var account *corev1.ServiceAccount
 	var deployment *appsv1.Deployment
+	var metricsService *corev1.Service
 	var role *rbacv1.Role
 	roles := map[string]*rbacv1.Role{}
 	bindings := map[string]*rbacv1.RoleBinding{}
@@ -65,6 +66,10 @@ func TestSharedAWSManifestReferences(t *testing.T) {
 			}
 		case *appsv1.Deployment:
 			deployment = obj
+		case *corev1.Service:
+			if obj.Name == "infra-smoketest-metrics" {
+				metricsService = obj
+			}
 		case *rbacv1.Role:
 			roles[obj.Name] = obj
 			if obj.Name == "infra-smoketest-controller" {
@@ -86,6 +91,22 @@ func TestSharedAWSManifestReferences(t *testing.T) {
 	}
 	if config == nil || account == nil || deployment == nil || role == nil {
 		t.Fatal("default deployment must include shared AWS configuration, identity ServiceAccount, controller, and RBAC")
+	}
+	if metricsService == nil || metricsService.Namespace != deployment.Namespace || len(metricsService.Spec.Selector) == 0 {
+		t.Fatal("missing controller metrics Service")
+	}
+	for label, value := range metricsService.Spec.Selector {
+		if deployment.Spec.Template.Labels[label] != value {
+			t.Fatalf("metrics Service selector %s=%s does not select the controller", label, value)
+		}
+	}
+	if len(metricsService.Spec.Ports) != 1 || metricsService.Spec.Ports[0].Name != "metrics" || metricsService.Spec.Ports[0].Port != 8080 || metricsService.Spec.Ports[0].TargetPort.String() != "metrics" {
+		t.Fatal("metrics Service must route port 8080 to the named metrics port")
+	}
+	if !slices.ContainsFunc(deployment.Spec.Template.Spec.Containers[0].Ports, func(port corev1.ContainerPort) bool {
+		return port.Name == "metrics" && port.ContainerPort == 8080
+	}) {
+		t.Fatal("controller must expose the named metrics port on 8080")
 	}
 	for _, name := range []string{"cert-manager", "kube-state-metrics"} {
 		test := tests[name]

@@ -57,6 +57,8 @@ spec:
                   apiVersion: v1
                   fieldPath: metadata.namespace
           ports:
+            - name: metrics
+              containerPort: 8080
             - name: health
               containerPort: 8081
           readinessProbe:
