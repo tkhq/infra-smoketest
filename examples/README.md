@@ -172,26 +172,25 @@ The test creates a Pod using `infra-smoketest-aws` and the
   IAM role. Static credentials, container credential sources, and fallback to
   the worker Node's role cannot satisfy the test.
 
-Set the shared account and role in
-[the AWS configuration](../config/aws-pod-identity-webhook/kustomization.yaml):
+Set the expected role on
+[the identity ServiceAccount](../config/aws-pod-identity-webhook/serviceaccount.yaml):
 
 ```yaml
-literals:
-  - AWS_ACCOUNT_ID=123456789012
-  - AWS_IDENTITY_ROLE_NAME=infra-smoketest-aws
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/infra-smoketest-aws
 ```
 
-These are the entries under `configMapGenerator` in that file. Kustomize uses
-them for both the controller configuration and the ServiceAccount's role ARN.
-The repository defaults are account `361645878370` and role
-`infra-smoketest-aws`. Region defaults to `us-east-1`; configure the controller's
-`--region` flag to change the expected region and keep the webhook's region
-configuration consistent.
+The controller reads this annotation when it accepts a Run and derives the
+account ID from it, so there is nothing else to configure. The repository
+default is `arn:aws:iam::361645878370:role/infra-smoketest-aws`. Region
+defaults to `us-east-1`; configure the controller's `--region` flag to change
+the expected region and keep the webhook's region configuration consistent.
 
-For custom deployments, use `--aws-account-id` and optionally
-`--identity-role-name`, or `--expected-role-arn` for a full ARN. The ServiceAccount
-annotation must match. These are controller settings, not environment variables
-to add to the example probe container.
+To pin the expectation independently of the annotation, use `--aws-account-id`
+and optionally `--identity-role-name`, or `--expected-role-arn` for a full ARN.
+The ServiceAccount annotation must then match. These are controller settings,
+not environment variables to add to the example probe container.
 
 The IAM role must trust the cluster's OIDC provider for subject
 `system:serviceaccount:infra-smoketest:infra-smoketest-aws` and audience

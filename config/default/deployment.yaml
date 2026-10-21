@@ -33,19 +33,7 @@ spec:
           image: ghcr.io/tkhq/infra-smoketest:dev
           args:
             - controller
-            - --aws-account-id=$(AWS_ACCOUNT_ID)
-            - --identity-role-name=$(AWS_IDENTITY_ROLE_NAME)
           env:
-            - name: AWS_ACCOUNT_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: infra-smoketest-aws-config
-                  key: AWS_ACCOUNT_ID
-            - name: AWS_IDENTITY_ROLE_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: infra-smoketest-aws-config
-                  key: AWS_IDENTITY_ROLE_NAME
             - name: POD_NAME
               valueFrom:
                 fieldRef:

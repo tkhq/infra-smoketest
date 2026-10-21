@@ -76,7 +76,7 @@ published by preparing this repository.
 
 The manifests in [config/default](config/default) install the namespace,
 controller Deployment, controller/probe/identity/cert-manager ServiceAccounts,
-shared AWS configuration, RBAC, and all five `SmokeTest` definitions from [examples](examples).
+RBAC, and all five `SmokeTest` definitions from [examples](examples).
 Install the CRDs from
 [config/crd](config/crd) first. The controller is restricted to the
 `infra-smoketest` namespace and has read-only cluster permissions. It does not
@@ -94,19 +94,21 @@ Before a live test, arrange these prerequisites through their owning repos:
   and Kubernetes CSI state; it does not query actual EBS volume properties.
 - Identity: [config/aws-pod-identity-webhook](config/aws-pod-identity-webhook)
   creates `infra-smoketest/infra-smoketest-aws` and is included in `config/default`.
-  Set `AWS_ACCOUNT_ID` and `AWS_IDENTITY_ROLE_NAME` once in its
-  [kustomization.yaml](config/aws-pod-identity-webhook/kustomization.yaml).
-  The account defaults to `361645878370`, matching the existing `tvc-dev`
-  GitOps configuration, and the role name defaults to `infra-smoketest-aws`.
-  Kustomize builds the ServiceAccount's role ARN from these values, and the
-  controller reads the same generated ConfigMap through `configMapKeyRef`.
+  Its `eks.amazonaws.com/role-arn` annotation in
+  [serviceaccount.yaml](config/aws-pod-identity-webhook/serviceaccount.yaml) is
+  the single source of the expected AWS identity: the webhook injects it into
+  identity Pods, and the controller reads the same annotation when it accepts a
+  Run, deriving the account ID from it. Override the annotation per environment
+  with a Kustomize patch. The default is
+  `arn:aws:iam::361645878370:role/infra-smoketest-aws`, matching the existing
+  `tvc-dev` GitOps configuration.
   The role's OIDC trust must allow subject
   `system:serviceaccount:infra-smoketest:infra-smoketest-aws` and audience
   `sts.amazonaws.com`. The role needs no attached AWS service policy for
   `GetCallerIdentity`. The [Terraform module](config/terraform/aws) creates this
   role using the cluster's existing IAM OIDC provider; its runnable example reads
-  the same shared account and role settings. Region defaults to
-  `us-east-1` and can be set with `--region`.
+  the same annotation. Region defaults to `us-east-1` and can be set with
+  `--region`.
 - Certificates: cert-manager's `cert-manager.io/v1` Issuer and CertificateRequest
   APIs, webhook, issuer controller, request approver, and self-signed signer must
   operate in `infra-smoketest`. The dedicated probe ServiceAccount can create
@@ -124,27 +126,30 @@ Before a live test, arrange these prerequisites through their owning repos:
   probe supports HTTP or HTTPS using the image's trusted CAs; it sends no API
   token or other credentials and does not follow redirects.
 
-Every Run saves the shared account as `status.awsAccountID`, alongside
-`status.expectedRoleARN` and `status.region`. Every probe receives
+When a Run is accepted, the controller reads the identity ServiceAccount's role
+annotation and saves the role as `status.expectedRoleARN`, its account as
+`status.awsAccountID`, and the configured `status.region`. Every probe receives
 `SMOKETEST_AWS_ACCOUNT_ID`, `SMOKETEST_EXPECTED_ROLE_ARN`, and `SMOKETEST_REGION`
 from that snapshot; definitions do not need to repeat them. These are controller
 supplied environment variables, not substitution expressions in SmokeTest YAML.
-New probe implementations can read the shared account directly. The identity
-probe already checks the caller account through the expected role ARN.
+New probe implementations can read the account directly. The identity probe
+already checks the caller account through the expected role ARN.
 
-For custom controller deployments, `--aws-account-id=ACCOUNT` derives
-`arn:aws:iam::ACCOUNT:role/infra-smoketest-aws`; `--identity-role-name=NAME`
-selects a different role in that account. Existing `--expected-role-arn`
-configuration remains supported, including IAM paths and other partitions;
-when also supplying an account or role name, they must match the ARN.
-Without AWS settings, autoscaler, storage, certificate, and metrics tests can
-still run, while the
+The controller can optionally pin the expectation instead of trusting the
+annotation: `--aws-account-id=ACCOUNT` expects
+`arn:aws:iam::ACCOUNT:role/infra-smoketest-aws`, `--identity-role-name=NAME`
+selects a different role in that account, and `--expected-role-arn` pins a full
+ARN, including IAM paths and other partitions; when also supplying an account or
+role name, they must match the ARN. A pinned Run only creates its identity Pod
+if the ServiceAccount annotation matches the pin, which guards against the
+annotation being pointed at another account. Without an annotation or pin,
+autoscaler, storage, certificate, and metrics tests can still run, while the
 identity test fails its configuration precondition.
 
-Changing the shared values and reapplying `config/default` changes the generated
-ConfigMap name and rolls out the controller. Already accepted Runs retain their
-snapshot. The ServiceAccount annotation must still match a Run's saved role
-before it can create an identity Pod.
+Changing the annotation takes effect for the next accepted Run without a
+controller restart. Already accepted Runs retain their snapshot, and the
+annotation must still match a Run's saved role before it can create an identity
+Pod.
 
 Make a deployment overlay to select your published image digest, for example:
 
