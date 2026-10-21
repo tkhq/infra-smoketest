@@ -141,10 +141,13 @@ func (r *Reconciler) pod(ctx context.Context, run *api.SmokeTestRun, stage api.S
 		}
 		return nil, err
 	}
-	if c.Args[1] == "identity" && (run.Status.ExpectedRoleARN == "" || sa.Annotations["eks.amazonaws.com/role-arn"] != run.Status.ExpectedRoleARN) {
-		return nil, fail("PreconditionFailed", "configure --aws-account-id (or --expected-role-arn) and a matching infra-smoketest-aws ServiceAccount role annotation; expected %q, found %q", run.Status.ExpectedRoleARN, sa.Annotations["eks.amazonaws.com/role-arn"])
+	if c.Args[1] == "identity" && run.Status.ExpectedRoleARN == "" {
+		return nil, fail("PreconditionFailed", "no expected IAM role: annotate the %s ServiceAccount with a valid %s or pin one with --expected-role-arn", definition.IdentitySA, RoleAnnotation)
 	}
-	if c.Args[1] != "identity" && sa.Annotations["eks.amazonaws.com/role-arn"] != "" {
+	if c.Args[1] == "identity" && sa.Annotations[RoleAnnotation] != run.Status.ExpectedRoleARN {
+		return nil, fail("PreconditionFailed", "%s ServiceAccount role annotation does not match the Run's expected role; expected %q, found %q", definition.IdentitySA, run.Status.ExpectedRoleARN, sa.Annotations[RoleAnnotation])
+	}
+	if c.Args[1] != "identity" && sa.Annotations[RoleAnnotation] != "" {
 		return nil, fail("PreconditionFailed", "ordinary probe ServiceAccount must not have an IAM role")
 	}
 	c.Image = run.Status.ProbeImage

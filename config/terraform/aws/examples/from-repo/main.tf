@@ -10,33 +10,28 @@ terraform {
 }
 
 locals {
-  # Consume the same values as the controller and ServiceAccount manifests.
-  kustomization = yamldecode(file("${path.module}/../../../../aws-pod-identity-webhook/kustomization.yaml"))
-  aws_config = one([
-    for config in local.kustomization.configMapGenerator : config
-    if config.name == "infra-smoketest-aws-config"
-  ])
-  aws_settings = {
-    for literal in local.aws_config.literals :
-    split("=", literal)[0] => join("=", slice(split("=", literal), 1, length(split("=", literal))))
-  }
+  # Consume the same role ARN the controller reads from the ServiceAccount.
+  service_account = yamldecode(file("${path.module}/../../../../aws-pod-identity-webhook/serviceaccount.yaml"))
+  role_arn        = local.service_account.metadata.annotations["eks.amazonaws.com/role-arn"]
+  aws_account_id  = split(":", local.role_arn)[4]
+  role_name       = trimprefix(split(":", local.role_arn)[5], "role/")
 }
 
 provider "aws" {
   region              = var.region
-  allowed_account_ids = [local.aws_settings.AWS_ACCOUNT_ID]
+  allowed_account_ids = [local.aws_account_id]
 }
 
 module "identity" {
   source = "../.."
 
-  aws_account_id    = local.aws_settings.AWS_ACCOUNT_ID
-  role_name         = local.aws_settings.AWS_IDENTITY_ROLE_NAME
+  aws_account_id    = local.aws_account_id
+  role_name         = local.role_name
   oidc_provider_url = var.oidc_provider_url
   tags              = var.tags
 }
 
 output "role_arn" {
-  description = "Role ARN to compare with the rendered identity ServiceAccount annotation."
+  description = "Role ARN to compare with the identity ServiceAccount annotation."
   value       = module.identity.role_arn
 }

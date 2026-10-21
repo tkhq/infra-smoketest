@@ -190,8 +190,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			sum := sha256.Sum256(b)
 			run.Status.DefinitionHash = hex.EncodeToString(sum[:])
 			run.Status.ProbeImage = r.ProbeImage
-			run.Status.AWSAccountID = r.AWSAccountID
-			run.Status.ExpectedRoleARN = r.ExpectedRoleARN
+			run.Status.AWSAccountID, run.Status.ExpectedRoleARN, err = r.awsIdentity(ctx)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 			run.Status.Region = r.Region
 			run.Status.Phase = "Pending"
 			condition(run, "Accepted", true, "Accepted", "Definition snapshot saved", now)

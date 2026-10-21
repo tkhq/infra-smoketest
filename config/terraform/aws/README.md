@@ -13,14 +13,14 @@ AWS account, or cluster OIDC provider is created. No permissions policy is
 attached: the probe calls
 [`GetCallerIdentity`, which requires no permissions](https://docs.aws.amazon.com/STS/latest/APIReference/API_GetCallerIdentity.html).
 
-## Use this repository's shared settings
+## Use this repository's ServiceAccount annotation
 
-The runnable [examples/from-repo](examples/from-repo) configuration reads
-`AWS_ACCOUNT_ID` and `AWS_IDENTITY_ROLE_NAME` directly from
-[the shared Kustomization](../../aws-pod-identity-webhook/kustomization.yaml).
-Configure those values there once. The example checks that AWS credentials
-belong to that account and creates the role at path `/`, matching the ARN that
-the controller derives.
+The runnable [examples/from-repo](examples/from-repo) configuration reads the
+`eks.amazonaws.com/role-arn` annotation directly from
+[the identity ServiceAccount](../../aws-pod-identity-webhook/serviceaccount.yaml),
+the same annotation the controller reads. Configure the ARN there once. The
+example checks that AWS credentials belong to that account and creates the
+role at path `/`, matching the annotation.
 
 Supply the HTTPS issuer URL of the cluster's existing IAM OIDC provider. For
 self-managed clusters this can be the S3 issuer URL from the cluster's OIDC
@@ -44,14 +44,14 @@ local Terraform state unless you add your backend configuration. Keep the state
 for subsequent role updates or deletion; state, local variable files, and saved
 plans are ignored by Git. The example's provider lock file is tracked.
 
-After the role exists, apply `config/default` using a controller image that
-supports the shared AWS settings, then create a fresh identity `SmokeTestRun`.
-The Terraform output should match the rendered ServiceAccount role annotation.
+After the role exists, apply `config/default`, then create a fresh identity
+`SmokeTestRun`. The Terraform output should match the ServiceAccount role
+annotation.
 
 ## Use from an existing Terraform configuration
 
-The module inherits the caller's AWS provider. Pass the shared account and role
-name from your configuration, along with the existing OIDC provider URL:
+The module inherits the caller's AWS provider. Pass the account and role name
+from your configuration, along with the existing OIDC provider URL:
 
 ```hcl
 module "smoke_test_identity" {
@@ -67,7 +67,7 @@ module "smoke_test_identity" {
 | Input | Required | Purpose |
 | --- | --- | --- |
 | `aws_account_id` | Yes | Existing AWS account; checked against provider credentials. |
-| `role_name` | Yes | Role name matching `AWS_IDENTITY_ROLE_NAME`, without an IAM path. |
+| `role_name` | Yes | Role name matching the ServiceAccount annotation, without an IAM path. |
 | `oidc_provider_url` | Yes | HTTPS URL of the existing IAM OIDC provider in that account. |
 | `tags` | No | Additional role tags; defaults to `{}`. |
 
